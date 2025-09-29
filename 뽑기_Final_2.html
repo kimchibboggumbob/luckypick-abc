@@ -3,19 +3,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>랜덤 뽑기 (중복 허용)</title>
+  <title>랜덤 뽑기 (공용 잔여 · Netlify Functions)</title>
   <style>
     :root { --fg:#0f172a; --muted:#475569; --bg:#f8fafc; --card:#ffffff; --primary:#2563eb; --border:#e2e8f0; }
     * { box-sizing: border-box; }
     body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; color:var(--fg); background:var(--bg); }
     .wrap { max-width: 960px; margin: 40px auto; padding: 24px; }
     .card { background:var(--card); border:1px solid var(--border); border-radius:16px; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06); overflow:hidden; }
-    .card-header { padding: 18px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+    .card-header { padding: 18px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
     h1 { font-size: 20px; margin:0; }
     .card-body { padding: 20px; display:grid; gap:18px; grid-template-columns: 1fr; }
     .row { display:grid; gap:12px; }
     label { font-weight:600; font-size:14px; }
-    textarea { width:100%; min-height: 200px; resize:vertical; padding:12px 14px; border:1px solid var(--border); border-radius:12px; font-size:14px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    textarea { width:100%; min-height: 200px; resize:vertical; padding:12px 14px; border:1px solid var(--border); border-radius:12px; font-size:14px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; background:#f8fafc; }
     input[type="number"] { width: 110px; padding:8px 10px; border:1px solid var(--border); border-radius:10px; font-size:13px; }
     .controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
     button { appearance:none; border:1px solid var(--border); background:#fff; color:var(--fg); padding:10px 14px; border-radius:12px; font-weight:600; cursor:pointer; transition: transform .02s ease; }
@@ -27,30 +27,28 @@
     .badge { display:inline-flex; align-items:center; gap:8px; font-size:13px; padding:6px 10px; border:1px solid var(--border); border-radius:999px; background:#f9fafb; }
     .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap:10px; }
     .empty { padding:12px; text-align:center; color:var(--muted); border:1px dashed var(--border); border-radius:10px; background:#f8fafc; }
-    .footer { padding: 14px 20px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+    .footer { padding: 14px 20px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
     .note { font-size:12px; color:var(--muted); }
-    /* 합계 섹션 스타일 */
     .summary { margin-top: 10px; border:1px solid var(--border); border-radius:12px; padding:12px; background:#fcfcfd; }
     .summary-title { font-weight:700; margin-bottom:6px; font-size:14px; }
     .summary-list { font-size:14px; line-height:1.6; }
-    /* 토스트 */
     .toast { position: fixed; right: 16px; bottom: 16px; background:#111827; color:#fff; padding:10px 14px; border-radius:10px; font-size:13px; opacity:0; transform:translateY(8px); transition: all .25s ease; }
     .toast.show { opacity:1; transform:translateY(0); }
-    .btn-area { margin-top: 16px; display:flex; justify-content:flex-start; }
+    .btn-area { margin-top: 16px; display:flex; gap:8px; justify-content:flex-start; flex-wrap:wrap; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="card">
       <div class="card-header">
-        <h1>랜덤 뽑기 (중복 허용 · 수량 차감)</h1>
-        <div class="muted">형식: <code>이름 [잔여 N]</code> · 잔여 0은 제외 · 결과 개수 1~50</div>
+        <h1>랜덤 뽑기 (중복 허용 · 공용 잔여 차감)</h1>
+        <div class="muted">형식: <code>이름 [잔여 N]</code> · “공용 잔여”는 서버에서 관리됩니다.</div>
       </div>
       <div class="card-body">
         <div class="row">
-          <label for="choices">선택지 입력 (한 줄당 1개)</label>
-          <textarea id="choices" placeholder="예)\n선택지1 [잔여 360]\n선택지2 [잔여 12]\n선택지3 [잔여 0]\n..."></textarea>
-          <div class="muted"><code>[잔여 N]</code> 형식으로 입력합니다. 예: <code>선택지1 [잔여 360]</code></div>
+          <label for="choices">현재 잔여 (읽기 전용)</label>
+          <textarea id="choices" placeholder="서버에서 잔여 목록을 불러옵니다." readonly></textarea>
+          <div class="muted">※ 이 목록은 Netlify Functions를 통해 서버(Blobs)에서 불러옵니다.</div>
         </div>
 
         <div class="row">
@@ -58,8 +56,9 @@
           <div class="controls">
             <input id="drawCount" type="number" min="1" max="50" value="5" />
             <button class="primary" id="btnDraw">뽑기</button>
+            <button id="btnRefresh">잔여 새로고침</button>
           </div>
-          <div class="note">※ 잔여 0은 풀에서 제외됩니다. 중복 허용 방식(with replacement).</div>
+          <div class="note">※ 추첨 시 공용 잔여 수량이 서버에서 차감됩니다.</div>
         </div>
 
         <div class="row">
@@ -74,8 +73,8 @@
         </div>
       </div>
       <div class="footer">
-        <div class="note">버전 1.7 · 단일 HTML 파일 · 클라이언트에서만 동작</div>
-        <div class="note">잔여 수량 반영 · 중복 허용 · 결과 개수 수정 가능 (1~50)</div>
+        <div class="note">버전 1.8 · Netlify Functions 연동</div>
+        <div class="note">공용 잔여 반영 · 결과 개수(1~50) · 오류 처리 강화</div>
       </div>
     </div>
   </div>
@@ -87,62 +86,42 @@
     const drawCountEl = document.getElementById('drawCount');
     const resultsEl = document.getElementById('results');
     const btnDraw = document.getElementById('btnDraw');
+    const btnRefresh = document.getElementById('btnRefresh');
     const btnClear = document.getElementById('btnClear');
     const toast = document.getElementById('toast');
-
-    // 기본 예시
-    const defaultChoices = [
-      '클렌징워터 미니 [잔여 348]','포밍클렌저 미니 [잔여 348]','소프트닝 미니 [잔여 348]','비타민미스트 미니 [잔여 348]','트리트먼트 미니 [잔여 348]',
-      '바디워시 미니 [잔여 348]','바디로션 미니 [잔여 348]','프로텍트uv 미니 [잔여 348]','모이스처샴푸 미니 [잔여 348]','리페어샴푸 미니 [잔여 348]'
-    ];
-    choicesEl.value = defaultChoices.join('\n');
 
     function showToast(msg) {
       toast.textContent = msg;
       toast.classList.add('show');
-      setTimeout(() => toast.classList.remove('show'), 1300);
+      setTimeout(() => toast.classList.remove('show'), 1500);
     }
 
-    function parseChoicesAllLines() {
-      return choicesEl.value.split(/\r?\n/);
-    }
-
-    function parseChoicesActive() {
-      return parseChoicesAllLines()
-        .map(line => line.trim())
-        .filter(Boolean)
-        .map(line => {
-          const match = line.match(/^(.*?) \[잔여\s*(\d+)\]$/);
-          if (!match) return null;
-          const name = match[1].trim();
-          const qty = parseInt(match[2], 10);
-          return { name, qty: Number.isFinite(qty) ? qty : 1 };
-        })
-        .filter(item => item && item.qty > 0);
-    }
-
-    function buildPool(choices) {
-      const pool = [];
-      for (const item of choices) {
-        for (let i = 0; i < item.qty; i++) pool.push(item.name);
+    // 1) 서버에서 현재 잔여 불러오기
+    async function loadStock() {
+      btnRefresh.disabled = true;
+      try {
+        const res = await fetch('/.netlify/functions/stock');
+        if (!res.ok) throw new Error('fetch failed');
+        const data = await res.json();
+        const list = Array.isArray(data.stock) ? data.stock : [];
+        if (!list.length) {
+          choicesEl.value = '';
+          resultsEl.innerHTML = '<div class="empty">서버에 등록된 잔여가 없습니다.</div>';
+        } else {
+          choicesEl.value = list.map(item => `${item.name} [잔여 ${item.remain}]`).join('\n');
+        }
+      } catch (e) {
+        choicesEl.value = '';
+        showToast('재고 불러오기 실패: 잠시 후 재시도하세요.');
+      } finally {
+        btnRefresh.disabled = false;
       }
-      return pool;
     }
 
-    function pickWithoutReplacement(pool, k) {
-      // 풀을 섞어서 앞에서 k개만 사용 (수량 한도 내 비복원 추첨)
-      const arr = pool.slice();
-      // Fisher–Yates shuffle
-      for (let i = arr.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
-      }
-      return arr.slice(0, Math.min(k, arr.length));
-    }
-
+    // 2) 결과 표시(서버에서 받은 results 배열 사용)
     function renderResults(list) {
       resultsEl.innerHTML = '';
-      if (!list.length) { resultsEl.innerHTML = '<div class="empty">결과가 없습니다.</div>'; return; }
+      if (!list?.length) { resultsEl.innerHTML = '<div class="empty">결과가 없습니다.</div>'; return; }
       const grid = document.createElement('div');
       grid.className = 'grid';
       list.forEach((item, i) => {
@@ -152,6 +131,8 @@
         grid.appendChild(chip);
       });
       resultsEl.appendChild(grid);
+
+      // 합계(동일 항목 중복 표기)
       const counts = Object.create(null); const order = [];
       for (const v of list) { if (!counts[v]) order.push(v); counts[v] = (counts[v] || 0) + 1; }
       const lines = order.map(k => counts[k] > 1 ? `${k}(${counts[k]})` : k);
@@ -164,43 +145,51 @@
       resultsEl.appendChild(summary);
     }
 
-    function decrementQuantitiesBy(picks) {
-      const used = picks.reduce((acc, v) => (acc[v] = (acc[v] || 0) + 1, acc), {});
-      const lines = parseChoicesAllLines();
-      const updated = lines.map(line => {
-        const raw = line.trim();
-        if (!raw) return line;
-        const match = raw.match(/^(.*?) \[잔여\s*(\d+)\]$/);
-        if (!match) return raw;
-        const name = match[1].trim();
-        const qty = parseInt(match[2], 10);
-        const current = Number.isFinite(qty) ? qty : 1;
-        const newQty = Math.max(0, current - (used[name] || 0));
-        return `${name} [잔여 ${newQty}]`;
-      });
-      choicesEl.value = updated.join('\n');
+    // 3) 뽑기(서버 호출: 공용 잔여 차감)
+    async function draw() {
+      const count = Number(drawCountEl.value);
+      if (!Number.isInteger(count) || count < 1 || count > 50) {
+        alert('결과 도출 개수는 1~50 정수로 입력하세요.');
+        return;
+      }
+      btnDraw.disabled = true;
+      try {
+        const res = await fetch('/.netlify/functions/stock?action=draw', {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ count })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) {
+          renderResults(data.results);
+          await loadStock(); // 최신 잔여 반영
+          showToast('추첨 완료');
+        } else {
+          alert('❌ 뽑기 실패: ' + (data.reason || 'unknown'));
+        }
+      } catch (e) {
+        alert('네트워크 오류로 요청에 실패했습니다.');
+      } finally {
+        // 한 번만 뽑게 두시려면 주석 해제하지 마세요.
+        // 여러 번 뽑기 허용이면 다음 줄 주석 해제:
+        // btnDraw.disabled = false;
+      }
     }
 
-    btnDraw.addEventListener('click', () => {
-      const k = Number(drawCountEl.value);
-      if (!Number.isInteger(k) || k < 1 || k > 50) { alert('결과 도출 개수는 1~50 정수로 입력'); return; }
-      const active = parseChoicesActive();
-      const pool = buildPool(active); // 잔여 수량만큼 전개된 멀티셋
-      if (pool.length === 0) { alert('잔여 수량 1 이상 선택지가 최소 1개 필요합니다.'); return; }
-
-      const picks = pickWithoutReplacement(pool, k); // 수량 한도 내 비복원 추첨
-      if (picks.length < k) {
-        showToast(`요청한 ${k}개 중 ${picks.length}개만 추첨됨 (잔여 수량 한도)`);
-      }
-      renderResults(picks);
-      decrementQuantitiesBy(picks);
-      btnDraw.disabled = true;
-    });
-
-    btnClear.addEventListener('click', () => {
+    // 4) 초기화 버튼(화면만 초기화)
+    function clearUI() {
       resultsEl.innerHTML = '<div class="empty">초기화되었습니다. 다시 뽑아주세요.</div>';
-      btnDraw.disabled = false;
-    });
+      // 필요 시 다시 뽑기 허용하려면 아래 주석 해제
+      // btnDraw.disabled = false;
+    }
+
+    // 이벤트 바인딩
+    btnRefresh.addEventListener('click', loadStock);
+    btnDraw.addEventListener('click', draw);
+    btnClear.addEventListener('click', clearUI);
+
+    // 최초 진입 시 잔여 불러오기
+    loadStock();
   </script>
 </body>
 </html>

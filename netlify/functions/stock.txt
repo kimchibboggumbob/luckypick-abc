@@ -1,0 +1,97 @@
+import { getStore } from "@netlify/blobs";
+
+const STORE_NAME = "random-pick-store";   // 저장소 이름
+const STOCK_KEY = "stock-v1";             // 키 이름
+
+// 초기 잔여수량 (필요에 따라 수정)
+const INITIAL_STOCK = [
+  { name: "클렌징워터 미니", remain: 348 },
+  { name: "포밍클렌저 미니", remain: 348 },
+  { name: "소프트닝 미니", remain: 348 },
+  { name: "비타민미스트 미니", remain: 348 },
+  { name: "트리트먼트 미니", remain: 348 },
+  { name: "바디워시 미니", remain: 348 },
+  { name: "바디로션 미니", remain: 348 },
+  { name: "프로텍트uv 미니", remain: 348 },
+  { name: "모이스처샴푸 미니", remain: 348 },
+  { name: "리페어샴푸 미니", remain: 348 },
+];
+
+export default async function handler(req) {
+  const url = new URL(req.url);
+  const action = url.searchParams.get("action");  // draw / get / update
+  const store = getStore(STORE_NAME);
+
+  // 재고 조회
+  if (req.method === "GET") {
+    const stockText = await store.get(STOCK_KEY);
+    const stock = stockText ? JSON.parse(stockText) : INITIAL_STOCK;
+    return new Response(JSON.stringify({ stock }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // 추첨(drawing)
+  if (req.method === "POST" && action === "draw") {
+    const body = await req.json().catch(() => ({}));
+    const count = Math.max(1, Math.min(50, Number(body?.count || 1)));
+
+    const stockText = await store.get(STOCK_KEY);
+    const stock = stockText ? JSON.parse(stockText) : INITIAL_STOCK;
+
+    // 잔여 > 0 인 것만 풀에 추가
+    let pool = [];
+    stock.forEach((item, idx) => {
+      for (let i = 0; i < item.remain; i++) {
+        pool.push(idx);
+      }
+    });
+
+    if (pool.length === 0) {
+      return new Response(JSON.stringify({ ok: false, reason: "no_stock" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 400,
+      });
+    }
+
+    // 뽑기
+    const results = [];
+    for (let i = 0; i < count; i++) {
+      if (pool.length === 0) break;
+      const pickIndex = Math.floor(Math.random() * pool.length);
+      const idx = pool[pickIndex];
+      results.push(stock[idx].name);
+      stock[idx].remain -= 1; // 잔여 차감
+      pool = pool.filter((_, j) => j !== pickIndex); // 풀에서 제거
+    }
+
+    await store.set(STOCK_KEY, JSON.stringify(stock));
+
+    return new Response(
+      JSON.stringify({ ok: true, results, stock }),
+      { headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  // 관리자: 잔여수량 수정
+  if (req.method === "POST" && action === "update") {
+    const token = req.headers.get("x-admin-token");
+    if (token !== (process.env.ADMIN_TOKEN || "")) {
+      return new Response("forbidden", { status: 403 });
+    }
+    const body = await req.json().catch(() => []);
+    if (!Array.isArray(body)) {
+      return new Response("bad format", { status: 400 });
+    }
+    const nextData = body.map(x => ({
+      name: String(x.name || ""),
+      remain: Math.max(0, Number(x.remain || 0))
+    }));
+    await store.set(STOCK_KEY, JSON.stringify(nextData));
+    return new Response(JSON.stringify({ ok: true, stock: nextData }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  return new Response("bad request", { status: 400 });
+}
