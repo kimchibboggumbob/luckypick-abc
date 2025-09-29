@@ -1,10 +1,11 @@
-// CommonJS + Functions v1 스타일
+// netlify/functions/stock.js
+// CommonJS + Netlify Functions v1 (안전 패치 버전)
 const { getStore } = require("@netlify/blobs");
 
 const STORE_NAME = "random-pick-store";
-const STOCK_KEY = "stock-v1";
+const STOCK_KEY  = "stock-v1";
 
-// 필요하면 기본값 수정
+// 필요에 맞게 초기값 수정
 const INITIAL_STOCK = [
   { name: "클렌징워터 미니", remain: 348 },
   { name: "포밍클렌저 미니", remain: 348 },
@@ -20,29 +21,28 @@ const INITIAL_STOCK = [
 
 exports.handler = async (event) => {
   try {
-    const store = getStore(STORE_NAME);
-    const url = new URL(event.rawUrl);
-    const action = url.searchParams.get("action");
+    const store  = getStore(STORE_NAME);
+    const qs     = event.queryStringParameters || {};
+    const action = qs.action || null;
 
     if (event.httpMethod === "GET") {
-      const txt = await store.get(STOCK_KEY);
+      const txt   = await store.get(STOCK_KEY);
       const stock = txt ? JSON.parse(txt) : INITIAL_STOCK;
       return ok({ stock });
     }
 
     if (event.httpMethod === "POST" && action === "draw") {
-      const body = safeJSON(event.body) || {};
-      const count = clampInt(body.count, 1, 50);
+      const body   = safeJSON(event.body) || {};
+      const count  = clampInt(body.count, 1, 50);
 
-      const txt = await store.get(STOCK_KEY);
-      const stock = txt ? JSON.parse(txt) : INITIAL_STOCK;
+      const txt    = await store.get(STOCK_KEY);
+      const stock  = txt ? JSON.parse(txt) : INITIAL_STOCK;
 
-      // 잔여 기반 풀 구성
+      // 잔여 기반 추첨 풀
       let pool = [];
       stock.forEach((item, idx) => {
         for (let i = 0; i < item.remain; i++) pool.push(idx);
       });
-
       if (pool.length === 0) return bad({ ok: false, reason: "no_stock" });
 
       // 비복원 추첨 + 차감
@@ -76,18 +76,15 @@ exports.handler = async (event) => {
 
     return { statusCode: 400, body: "bad request" };
   } catch (e) {
-    console.error(e);
+    // 함수 로그에서 원인 확인 가능
+    console.error("[stock] internal error:", e);
     return { statusCode: 500, body: "internal error" };
   }
 };
 
 // helpers
-function ok(obj) {
-  return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) };
-}
-function bad(obj) {
-  return { statusCode: 400, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) };
-}
+function ok(obj)  { return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) }; }
+function bad(obj) { return { statusCode: 400, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) }; }
 function safeJSON(s) { try { return JSON.parse(s || "null"); } catch { return null; } }
 function clampInt(v, min, max) {
   const n = Number(v);
