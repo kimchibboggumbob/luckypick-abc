@@ -1,5 +1,5 @@
 // netlify/functions/stock.js
-// CommonJS + Netlify Functions v1 (안전 패치 버전)
+// CommonJS + Netlify Functions v1 (강화판: 예외 방어/복구)
 const { getStore } = require("@netlify/blobs");
 
 const STORE_NAME = "random-pick-store";
@@ -21,22 +21,20 @@ const INITIAL_STOCK = [
 
 exports.handler = async (event) => {
   try {
-    const store  = getStore(STORE_NAME);
-    const qs     = event.queryStringParameters || {};
+    const store = getStore(STORE_NAME);
+    const qs = event.queryStringParameters || {};
     const action = qs.action || null;
 
     if (event.httpMethod === "GET") {
-      const txt   = await store.get(STOCK_KEY);
-      const stock = txt ? JSON.parse(txt) : INITIAL_STOCK;
+      const stock = await safeReadStock(store);
       return ok({ stock });
     }
 
     if (event.httpMethod === "POST" && action === "draw") {
-      const body   = safeJSON(event.body) || {};
-      const count  = clampInt(body.count, 1, 50);
+      const body  = safeJSON(event.body) || {};
+      const count = clampInt(body.count, 1, 50);
 
-      const txt    = await store.get(STOCK_KEY);
-      const stock  = txt ? JSON.parse(txt) : INITIAL_STOCK;
+      const stock = await safeReadStock(store);
 
       // 잔여 기반 추첨 풀
       let pool = [];
@@ -55,7 +53,7 @@ exports.handler = async (event) => {
         pool.splice(pickIndex, 1);
       }
 
-      await store.set(STOCK_KEY, JSON.stringify(stock));
+      await safeWriteStock(store, stock);
       return ok({ ok: true, results, stock });
     }
 
@@ -70,19 +68,48 @@ exports.handler = async (event) => {
         name: String(x.name || ""),
         remain: Math.max(0, Number(x.remain || 0)),
       }));
-      await store.set(STOCK_KEY, JSON.stringify(next));
+      await safeWriteStock(getStore(STORE_NAME), next);
       return ok({ ok: true, stock: next });
     }
 
     return { statusCode: 400, body: "bad request" };
   } catch (e) {
-    // 함수 로그에서 원인 확인 가능
     console.error("[stock] internal error:", e);
     return { statusCode: 500, body: "internal error" };
   }
 };
 
-// helpers
+// ---------- helpers ----------
+async function safeReadStock(store) {
+  try {
+    const txt = await store.get(STOCK_KEY);
+    if (!txt) {
+      // 최초 실행: 초기값을 저장해두면 이후부터 안정적
+      await store.set(STOCK_KEY, JSON.stringify(INITIAL_STOCK));
+      return [...INITIAL_STOCK];
+    }
+    try {
+      return JSON.parse(txt);
+    } catch (e) {
+      console.error("[stock] JSON parse failed, reset to INITIAL_STOCK", e);
+      await store.set(STOCK_KEY, JSON.stringify(INITIAL_STOCK));
+      return [...INITIAL_STOCK];
+    }
+  } catch (e) {
+    console.error("[stock] read error, fallback to INITIAL_STOCK", e);
+    return [...INITIAL_STOCK];
+  }
+}
+
+async function safeWriteStock(store, data) {
+  try {
+    await store.set(STOCK_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.error("[stock] write error:", e);
+    // 쓰기 실패해도 읽기는 가능하도록 그냥 통과
+  }
+}
+
 function ok(obj)  { return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) }; }
 function bad(obj) { return { statusCode: 400, headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) }; }
 function safeJSON(s) { try { return JSON.parse(s || "null"); } catch { return null; } }
